@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestor de Archivos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .hidden-file-input { display: none; }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center">
+
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 sm:p-8 space-y-6 flex flex-col items-center">
+
+    <!-- Área de carga -->
+    <div id="upload-section" class="w-full flex flex-col items-center space-y-6">
+      <div id="drop-area"
+        class="border-2 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center text-gray-500 w-full hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 cursor-pointer flex flex-col items-center justify-center min-h-[200px] sm:min-h-[250px]">
+        <p class="text-lg sm:text-xl">Arrastra tus archivos aquí</p>
+        <p class="text-sm mt-2">o haz clic para seleccionar</p>
+        <input type="file" id="file-input" class="hidden-file-input" multiple>
+      </div>
+
+      <button id="view-files-button-upload" class="mt-6 px-8 py-3 bg-gray-200 text-gray-800 rounded-full hover:bg-gray-300 transition">Ver archivos</button>
+      <button id="logoutBtn" class="mt-6 px-8 py-3 bg-gray-200 text-gray-800 rounded-full hover:bg-gray-300 transition">Cerrar sesión</button>
+    </div>
+
+    <!-- Lista de archivos -->
+    <div id="file-list-section" class="w-full space-y-4 hidden">
+      <h2 class="text-2xl font-semibold text-gray-800 text-center mb-4">Tus Archivos</h2>
+      <ul id="file-list" class="space-y-3"></ul>
+      <button id="view-files-button-list" class="w-full mt-6 px-8 py-3 bg-gray-200 text-gray-800 rounded-full hover:bg-gray-300 transition">Volver a cargar</button>
+    </div>
+  </div>
+
+  <script>
+    const dropArea = document.getElementById('drop-area');
+    const fileInput = document.getElementById('file-input');
+    const uploadSection = document.getElementById('upload-section');
+    const fileListSection = document.getElementById('file-list-section');
+    const fileListUl = document.getElementById('file-list');
+    const viewFilesButtonUpload = document.getElementById('view-files-button-upload');
+    const viewFilesButtonList = document.getElementById('view-files-button-list');
+    const LOCAL_STORAGE_KEY = 'uploadedFileNames';
+    let uploadedFileNames = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || [];
+
+    // Función para subir archivo
+    async function uploadFile(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/funciones/carga.php', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (!uploadedFileNames.includes(data.filename)) {
+            uploadedFileNames.push(data.filename);
+            saveFilesToLocalStorage();
+            showMessage(`Archivo "${data.filename}" subido correctamente.`);
+            renderFileList();
+          }
+        } else {
+          showMessage(data.error || 'Error al subir el archivo');
+        }
+      } catch (err) {
+        showMessage('Error: ' + err.message);
+      }
+    }
+
+    // Guarda lista en localStorage
+    function saveFilesToLocalStorage() {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(uploadedFileNames));
+    }
+
+    // Muestra lista de archivos
+    function renderFileList() {
+      fileListUl.innerHTML = '';
+      if (uploadedFileNames.length === 0) {
+        fileListUl.innerHTML = '<li class="text-gray-600 text-center py-4">No hay archivos cargados.</li>';
+        return;
+      }
+      uploadedFileNames.forEach(fileName => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between bg-gray-50 p-4 rounded-lg shadow-sm';
+        li.innerHTML = `
+          <span class="text-gray-700 truncate mr-4">${fileName}</span>
+          <div class="flex items-center space-x-2">
+            <a href="/funciones/uploads/${fileName}" download="${fileName}" class="text-gray-500 hover:text-blue-500">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+            <button class="delete-button text-gray-500 hover:text-red-500" data-file-name="${fileName}">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>`;
+        fileListUl.appendChild(li);
+      });
+    }
+
+    // Eliminar archivo
+    async function deleteFile(fileName) {
+      try {
+        const res = await fetch('/funciones/borrado.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: fileName })
+        });
+        const data = await res.json();
+        if (data.success) {
+          uploadedFileNames = uploadedFileNames.filter(name => name !== fileName);
+          saveFilesToLocalStorage();
+          renderFileList();
+          showMessage(`Archivo "${fileName}" eliminado.`);
+        } else {
+          showMessage(data.error);
+        }
+      } catch (err) {
+        showMessage('Error: ' + err.message);
+      }
+    }
+
+    // Mensajes emergentes
+    function showMessage(message) {
+      const msg = document.createElement('div');
+      msg.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-3 rounded-lg shadow-xl text-center opacity-0 transition-opacity duration-300';
+      msg.textContent = message;
+      document.body.appendChild(msg);
+      msg.offsetHeight; // Fuerza el reflow
+      msg.style.opacity = '1';
+      setTimeout(() => {
+        msg.style.opacity = '0';
+        msg.addEventListener('transitionend', () => msg.remove());
+      }, 3000);
+    }
+
+    // Eventos para arrastrar y soltar
+    dropArea.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropArea.classList.add('border-blue-500', 'bg-blue-50');
+    });
+
+    dropArea.addEventListener('dragleave', () => {
+      dropArea.classList.remove('border-blue-500', 'bg-blue-50');
+    });
+
+    dropArea.addEventListener('drop', e => {
+      e.preventDefault();
+      dropArea.classList.remove('border-blue-500', 'bg-blue-50');
+      [...e.dataTransfer.files].forEach(uploadFile);
+    });
+
+    // Click para seleccionar archivo
+    dropArea.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', e => {
+      [...e.target.files].forEach(uploadFile);
+    });
+
+    // Cambiar a vista de archivos
+    viewFilesButtonUpload.addEventListener('click', () => {
+      uploadSection.classList.add('hidden');
+      fileListSection.classList.remove('hidden');
+      renderFileList();
+    });
+
+    // Volver a carga
+    viewFilesButtonList.addEventListener('click', () => {
+      fileListSection.classList.add('hidden');
+      uploadSection.classList.remove('hidden');
+    });
+
+    // Eliminar al dar click
+    fileListUl.addEventListener('click', e => {
+      const delBtn = e.target.closest('.delete-button');
+      if (delBtn) deleteFile(delBtn.dataset.fileName);
+    });
+
+    // Botón cerrar sesión
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem(LOCAL_STORAGE_KEY); // Limpia los nombres de archivos guardados localmente
+            // Si tienes un script de logout real, redirige a él.
+            // Ejemplo: window.location.href = '../funciones/logout.php';
+            window.location.href = 'login.php'; // Redirige a la página de login
+        });
+
+    // Render inicial al cargar
+    document.addEventListener('DOMContentLoaded', renderFileList);
+  </script>
+</body>
+</html>
